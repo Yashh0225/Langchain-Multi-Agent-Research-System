@@ -5,7 +5,10 @@ import requests
 from dotenv import load_dotenv
 import os
 from tavily import TavilyClient
-from rich import print
+try:
+    from rich import print
+except ImportError:
+    pass
 from bs4 import BeautifulSoup
 from readability import Document
 import trafilatura
@@ -22,7 +25,7 @@ def web_search(query: str) -> str:
     Search the web for recent and reliable information on a topic.
     Returns titles, URLs, and snippets.
     """
-
+    print(f"  [Tool: web_search] Querying Tavily: '{query}'...", flush=True)
     results = tavily.search(query=query, max_results=5)
 
     out = []
@@ -34,6 +37,7 @@ def web_search(query: str) -> str:
             f"Snippet: {r['content'][:300]}\n"
         )
 
+    print(f"  [Tool: web_search] Retrieved {len(results.get('results', []))} results.", flush=True)
     return "\n".join(out)
 
 @tool
@@ -42,6 +46,7 @@ def scrape_url(url: str) -> str:
     Scrape and extract clean readable content from a URL.
     Uses multiple extraction strategies for better reliability.
     """
+    print(f"  [Tool: scrape_url] Fetching URL: {url}...", flush=True)
 
     headers = {
         "User-Agent": (
@@ -76,8 +81,10 @@ def scrape_url(url: str) -> str:
 
         if extracted and len(extracted.strip()) > 200:
             cleaned = re.sub(r'\s+', ' ', extracted)
+            print(f"  [Tool: scrape_url] Strategy 1 (Trafilatura) succeeded ({len(cleaned)} chars extracted).", flush=True)
             return cleaned[:5000]
 
+        print(f"  [Tool: scrape_url] Strategy 1 yielded insufficient text (<200 chars). Trying Strategy 2 (Readability)...", flush=True)
         # ──────────────────────────────────────────────────
         # Strategy 2 → readability
         # ──────────────────────────────────────────────────
@@ -101,8 +108,10 @@ def scrape_url(url: str) -> str:
 
         if text and len(text.strip()) > 200:
             cleaned = re.sub(r'\s+', ' ', text)
+            print(f"  [Tool: scrape_url] Strategy 2 (Readability) succeeded ({len(cleaned)} chars extracted).", flush=True)
             return cleaned[:5000]
 
+        print(f"  [Tool: scrape_url] Strategy 2 yielded insufficient text. Trying Strategy 3 (BS4 fallback)...", flush=True)
         # ──────────────────────────────────────────────────
         # Strategy 3 → fallback full page extraction
         # ──────────────────────────────────────────────────
@@ -124,15 +133,21 @@ def scrape_url(url: str) -> str:
         cleaned = re.sub(r'\s+', ' ', text)
 
         if cleaned:
+            print(f"  [Tool: scrape_url] Strategy 3 (BS4 full-page fallback) succeeded ({len(cleaned)} chars extracted).", flush=True)
             return cleaned[:5000]
 
+        print(f"  [Tool: scrape_url] Warning: Could not extract meaningful content from {url}", flush=True)
         return "Could not extract meaningful content from the page."
 
     except requests.exceptions.Timeout:
+        print(f"  [Tool: scrape_url] Timeout: Request timed out after 15s for {url}", flush=True)
         return "Request timed out while scraping the URL."
 
     except requests.exceptions.HTTPError as e:
+        status_code = e.response.status_code if e.response is not None else "unknown"
+        print(f"  [Tool: scrape_url] HTTP {status_code} Error: {e}", flush=True)
         return f"HTTP error occurred: {str(e)}"
 
     except Exception as e:
+        print(f"  [Tool: scrape_url] Scraping Error: {e}", flush=True)
         return f"Could not scrape URL: {str(e)}"
